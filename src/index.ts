@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import { seedBooksOnStartup } from "./bootstrap/book-seed";
 import bookRoutes from "./routes/book-routes";
 import { apiDocs } from "./config/api-docs";
 import { connectDatabase, disconnectDatabase } from "./config/db";
@@ -37,6 +38,7 @@ const logApiRoutes = (): void => {
 const startServer = async (): Promise<void> => {
   try {
     await connectDatabase();
+    await seedBooksOnStartup();
     await connectRedis();
 
     const server = app.listen(port, () => {

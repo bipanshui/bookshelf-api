@@ -29,6 +29,7 @@ src/
   index.ts
 prisma/
   schema.prisma
+initial_payload.json
 ```
 
 ## Requirements
@@ -43,13 +44,13 @@ prisma/
 Create a `.env` file in the project root:
 
 ```env
-DATABASE_URL=postgresql://bookshelf:bookshelf@127.0.0.1:5432/bookshelf
+DATABASE_URL=postgresql://bipanshu:password@127.0.0.1:5432/bookshelf
 PORT=3000
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 POSTGRES_DB=bookshelf
-POSTGRES_USER=bookshelf
-POSTGRES_PASSWORD=bookshelf
+POSTGRES_USER=bipanshu
+POSTGRES_PASSWORD=password
 ```
 
 Notes:
@@ -63,7 +64,7 @@ Notes:
 Your current `.env` points to a remote Neon database. If you want the API to use a Postgres container running on the same machine, replace `DATABASE_URL` with a local connection string like:
 
 ```env
-DATABASE_URL=postgresql://bookshelf:bookshelf@127.0.0.1:5432/bookshelf
+DATABASE_URL=postgresql://bipanshu:password@127.0.0.1:5432/bookshelf
 ```
 
 ## Install
@@ -103,6 +104,17 @@ If you want to inspect container status:
 ```bash
 docker compose ps
 ```
+
+## Initial Seed
+
+The project now includes [`initial_payload.json`](/home/bipanshu/Devops_labs/projects/bookshelf-api/initial_payload.json) with 100 books.
+
+On startup, the API checks the `books` table:
+
+- If the table is empty, it loads the JSON payload once.
+- If any books already exist, it skips seeding.
+
+That means the seed runs automatically for a fresh database, but not on every restart.
 
 ## Run
 
