@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import bookRoutes from "./routes/book-routes";
+import { connectDatabase, disconnectDatabase } from "./config/db";
 
 dotenv.config();
 
@@ -14,6 +15,33 @@ app.get("/", (_req, res) => {
   res.send("BookShelf API running ... ");
 });
 
-app.listen(port, () => {
-  console.log(`listening at the port ${port}`);
-});
+const startServer = async (): Promise<void> => {
+  try {
+    await connectDatabase();
+
+    const server = app.listen(port, () => {
+      console.log(`listening at the port ${port}`);
+    });
+
+    const shutdown = async (signal: string): Promise<void> => {
+      console.log(`Received ${signal}. Shutting down...`);
+      server.close(async () => {
+        await disconnectDatabase();
+        process.exit(0);
+      });
+    };
+
+    process.on("SIGINT", () => {
+      void shutdown("SIGINT");
+    });
+
+    process.on("SIGTERM", () => {
+      void shutdown("SIGTERM");
+    });
+  } catch (error) {
+    console.error("Failed to connect to database", error);
+    process.exit(1);
+  }
+};
+
+void startServer();

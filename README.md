@@ -1,13 +1,14 @@
 # Bookshelf API
 
-A small Node.js + TypeScript API for fetching books from PostgreSQL with Express.
+A small Node.js + TypeScript API for managing books in PostgreSQL with Express and Prisma ORM.
 
 ## Stack
 
 - Node.js
 - TypeScript
 - Express
-- PostgreSQL with `pg`
+- PostgreSQL
+- Prisma ORM
 - Redis with `ioredis`
 
 ## Project Structure
@@ -26,6 +27,8 @@ src/
   services/
     book-service.ts
   index.ts
+prisma/
+  schema.prisma
 ```
 
 ## Requirements
@@ -53,6 +56,13 @@ Notes:
 
 ```bash
 npm install
+npm run prisma:generate
+```
+
+Sync the Prisma schema to your database:
+
+```bash
+npm run prisma:push
 ```
 
 ## Run
@@ -89,7 +99,7 @@ BookShelf API running ...
 
 ### `GET /books`
 
-Fetch all books from the `books` table.
+Fetch all books from the `books` table through Prisma.
 
 Example:
 
@@ -99,15 +109,15 @@ curl http://localhost:3000/books
 
 ## Database
 
-The PostgreSQL pool is configured in [`src/config/db.ts`](/home/bipanshu/Devops_labs/projects/bookshelf-api/src/config/db.ts).
+Prisma is configured in [schema.prisma](/home/bipanshu/Devops_labs/projects/bookshelf-api/prisma/schema.prisma), and the shared Prisma client is initialized in [db.ts](/home/bipanshu/Devops_labs/projects/bookshelf-api/src/config/db.ts).
 
-Expected `books` table shape:
+Current Prisma model:
 
-- `id`
-- `title`
-- `author`
-- `published_year`
-- `created_at`
+- `Book.id`
+- `Book.title`
+- `Book.author`
+- `Book.publishedYear`
+- `Book.createdAt`
 
 If `DATABASE_URL` is missing, the app throws an error at startup.
 

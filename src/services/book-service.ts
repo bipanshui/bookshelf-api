@@ -1,40 +1,47 @@
-import { pool } from "../config/db";
+import { prisma } from "../config/db";
+import { Prisma } from "../generated/prisma/client";
 import { Book, NewBook } from "../models/book-model";
 
-const GET_BOOKS_QUERY = `
-  SELECT id, title, author, published_year, created_at
-  FROM books
-  ORDER BY id ASC
-`;
+const toBook = (book: {
+  id: number;
+  title: string;
+  author: string;
+  publishedYear: number;
+  createdAt: Date;
+}): Book => ({
+  id: book.id,
+  title: book.title,
+  author: book.author,
+  published_year: book.publishedYear,
+  created_at: book.createdAt,
+});
 
 export const createBook = async (newBook: NewBook): Promise<Book> => {
-  const { title, author, published_year } = newBook;
-  const result = await pool.query<Book>(
-    `
-      INSERT INTO books (title, author, published_year)
-      VALUES ($1, $2, $3)
-      RETURNING id, title, author, published_year, created_at
-    `,
-    [title, author, published_year],
-  );
+  const createdBook = await prisma.book.create({
+    data: {
+      title: newBook.title,
+      author: newBook.author,
+      publishedYear: newBook.published_year,
+    },
+  });
 
-  return result.rows[0]!;
+  return toBook(createdBook);
 };
 
 export const findExistingBook = async (
   book: NewBook,
 ): Promise<Book | null> => {
-  const result = await pool.query<Book>(
-    `
-      SELECT id, title, author, published_year, created_at
-      FROM books
-      WHERE title = $1 AND author = $2 AND published_year = $3
-      LIMIT 1
-    `,
-    [book.title, book.author, book.published_year],
-  );
+  const existingBook = await prisma.book.findUnique({
+    where: {
+      title_author_publishedYear: {
+        title: book.title,
+        author: book.author,
+        publishedYear: book.published_year,
+      },
+    },
+  });
 
-  return result.rows[0] ?? null;
+  return existingBook ? toBook(existingBook) : null;
 };
 
 export const createBookIfNotExists = async (
@@ -70,51 +77,79 @@ export const createBooksBulk = async (
 
 
 export const getBooks = async (): Promise<Book[]> => {
-  const result = await pool.query<Book>(GET_BOOKS_QUERY);
-  return result.rows;
+  const books = await prisma.book.findMany({
+    orderBy: {
+      id: "asc",
+    },
+  });
+
+  return books.map(toBook);
 };
 
-export const getBooksById = async (id : number) : Promise<Book> => {
-    const result = await pool.query<Book>(
-        'SELECT id, title, author, published_year, created_at FROM books WHERE id = $1',
-        [id]
-    );
-    return result.rows[0]!;
-    
-}
+export const getBooksById = async (id: number): Promise<Book | null> => {
+  const book = await prisma.book.findUnique({
+    where: { id },
+  });
 
-export const updateBook = async(
-    id : number, 
-    updatedBook : Partial<NewBook>
-) : Promise<Book> =>  { 
-    
-    
-    const {title, author, published_year} = updatedBook;
+  return book ? toBook(book) : null;
+};
 
-    const result = await pool.query<Book>(
-        `
-            UPDATE books
-            SET title = COALESCE($1, title),
-                author = COALESCE($2, author),
-                published_year = COALESCE($3, published_year)
-            WHERE id = $4
-            RETURNING id, title, author, published_year, created_at
-        `,
-        [title, author, published_year, id]
-    );
+export const updateBook = async (
+  id: number,
+  updatedBook: Partial<NewBook>,
+): Promise<Book | null> => {
+  const data: Prisma.BookUpdateInput = {};
 
-    return result.rows[0]!;
+  if (updatedBook.title !== undefined) {
+    data.title = updatedBook.title;
+  }
+
+  if (updatedBook.author !== undefined) {
+    data.author = updatedBook.author;
+  }
+
+  if (updatedBook.published_year !== undefined) {
+    data.publishedYear = updatedBook.published_year;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return getBooksById(id);
+  }
+
+  try {
+    const updated = await prisma.book.update({
+      where: { id },
+      data,
+    });
+
+    return toBook(updated);
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 export const deleteBook = async (id: number): Promise<Book | null> => {
-  const result = await pool.query<Book>(
-    `
-      DELETE FROM books
-      WHERE id = $1
-      RETURNING id, title, author, published_year, created_at
-    `,
-    [id],
-  );
+  try {
+    const deleted = await prisma.book.delete({
+      where: { id },
+    });
 
-  return result.rows[0] ?? null;
+    return toBook(deleted);
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return null;
+    }
+
+    throw error;
+  }
 };
