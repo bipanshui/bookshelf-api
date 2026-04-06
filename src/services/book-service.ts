@@ -1,4 +1,6 @@
 import { prisma } from "../config/db";
+import { logger } from "../config/logger";
+import { redis } from "../config/redis";
 import { Prisma } from "../generated/prisma/client";
 import {
   Book,
@@ -6,6 +8,9 @@ import {
   NewBook,
   PaginatedBooksResult,
 } from "../models/book-model";
+
+const BOOKS_CACHE_TTL_SECONDS = 300;
+const BOOKS_CACHE_PREFIX = "books";
 
 const toBook = (book: {
   id: number;
@@ -21,7 +26,92 @@ const toBook = (book: {
   created_at: book.createdAt,
 });
 
-export const createBook = async (newBook: NewBook): Promise<Book> => {
+const hydrateBook = (book: Book): Book => ({
+  ...book,
+  created_at: new Date(book.created_at),
+});
+
+const hydratePaginatedBooksResult = (
+  result: PaginatedBooksResult,
+): PaginatedBooksResult => ({
+  ...result,
+  data: result.data.map(hydrateBook),
+});
+
+const createCacheKey = (...parts: Array<string | number>): string =>
+  `${BOOKS_CACHE_PREFIX}:${parts.join(":")}`;
+
+const isRedisReady = (): boolean => redis.status === "ready";
+
+const getCachedValue = async <T>(
+  key: string,
+  hydrate?: (value: T) => T,
+): Promise<T | null> => {
+  if (!isRedisReady()) {
+    return null;
+  }
+
+  try {
+    const cached = await redis.get(key);
+
+    if (!cached) {
+      logger.info("Cache miss", { key });
+      return null;
+    }
+
+    const parsed = JSON.parse(cached) as T;
+    logger.info("Cache hit", { key });
+    return hydrate ? hydrate(parsed) : parsed;
+  } catch (error) {
+    logger.warn("Failed to read from Redis cache", { key, error });
+    return null;
+  }
+};
+
+const setCachedValue = async <T>(key: string, value: T): Promise<void> => {
+  if (!isRedisReady()) {
+    return;
+  }
+
+  try {
+    await redis.set(key, JSON.stringify(value), "EX", BOOKS_CACHE_TTL_SECONDS);
+    logger.info("Cache set", { key, ttlSeconds: BOOKS_CACHE_TTL_SECONDS });
+  } catch (error) {
+    logger.warn("Failed to write to Redis cache", { key, error });
+  }
+};
+
+const invalidateBooksCache = async (): Promise<void> => {
+  if (!isRedisReady()) {
+    return;
+  }
+
+  try {
+    let cursor = "0";
+
+    do {
+      const [nextCursor, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        `${BOOKS_CACHE_PREFIX}:*`,
+        "COUNT",
+        100,
+      );
+
+      cursor = nextCursor;
+
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
+    } while (cursor !== "0");
+
+    logger.info("Books cache invalidated");
+  } catch (error) {
+    logger.warn("Failed to invalidate books cache", { error });
+  }
+};
+
+const createBookRecord = async (newBook: NewBook): Promise<Book> => {
   const createdBook = await prisma.book.create({
     data: {
       title: newBook.title,
@@ -31,6 +121,12 @@ export const createBook = async (newBook: NewBook): Promise<Book> => {
   });
 
   return toBook(createdBook);
+};
+
+export const createBook = async (newBook: NewBook): Promise<Book> => {
+  const createdBook = await createBookRecord(newBook);
+  await invalidateBooksCache();
+  return createdBook;
 };
 
 export const findExistingBook = async (
@@ -58,7 +154,8 @@ export const createBookIfNotExists = async (
     return { book: existingBook, created: false };
   }
 
-  const createdBook = await createBook(newBook);
+  const createdBook = await createBookRecord(newBook);
+  await invalidateBooksCache();
   return { book: createdBook, created: true };
 };
 
@@ -68,27 +165,49 @@ export const createBooksBulk = async (
   createdBooks: Book[];
   existingBooks: Book[];
 }> => {
-  const results = await Promise.all(
-    newBooks.map((book) => createBookIfNotExists(book)),
-  );
+  const createdBooks: Book[] = [];
+  const existingBooks: Book[] = [];
+
+  for (const book of newBooks) {
+    const existingBook = await findExistingBook(book);
+
+    if (existingBook) {
+      existingBooks.push(existingBook);
+      continue;
+    }
+
+    createdBooks.push(await createBookRecord(book));
+  }
+
+  if (createdBooks.length > 0) {
+    await invalidateBooksCache();
+  }
 
   return {
-    createdBooks: results.filter((result) => result.created).map((result) => result.book),
-    existingBooks: results
-      .filter((result) => !result.created)
-      .map((result) => result.book),
+    createdBooks,
+    existingBooks,
   };
 };
 
-
 export const getBooks = async (): Promise<Book[]> => {
+  const cacheKey = createCacheKey("all");
+  const cachedBooks = await getCachedValue<Book[]>(cacheKey, (books) =>
+    books.map(hydrateBook),
+  );
+
+  if (cachedBooks) {
+    return cachedBooks;
+  }
+
   const books = await prisma.book.findMany({
     orderBy: {
       id: "asc",
     },
   });
 
-  return books.map(toBook);
+  const result = books.map(toBook);
+  await setCachedValue(cacheKey, result);
+  return result;
 };
 
 const sortByToPrismaField = (
@@ -108,6 +227,16 @@ export const getBooksWithQuery = async (
   options: BookQueryOptions,
 ): Promise<PaginatedBooksResult> => {
   const { page, limit, author, published_year, search, sort_by, order } = options;
+  const cacheKey = createCacheKey("search", JSON.stringify(options));
+
+  const cachedResult = await getCachedValue<PaginatedBooksResult>(
+    cacheKey,
+    hydratePaginatedBooksResult,
+  );
+
+  if (cachedResult) {
+    return cachedResult;
+  }
 
   const where: Prisma.BookWhereInput = {
     ...(author ? { author: { contains: author, mode: "insensitive" } } : {}),
@@ -137,7 +266,7 @@ export const getBooksWithQuery = async (
 
   const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / limit);
 
-  return {
+  const result = {
     data: books.map(toBook),
     pagination: {
       page,
@@ -155,14 +284,30 @@ export const getBooksWithQuery = async (
       order,
     },
   };
+
+  await setCachedValue(cacheKey, result);
+  return result;
 };
 
 export const getBooksById = async (id: number): Promise<Book | null> => {
+  const cacheKey = createCacheKey("id", id);
+  const cachedBook = await getCachedValue<Book>(cacheKey, hydrateBook);
+
+  if (cachedBook) {
+    return cachedBook;
+  }
+
   const book = await prisma.book.findUnique({
     where: { id },
   });
 
-  return book ? toBook(book) : null;
+  if (!book) {
+    return null;
+  }
+
+  const result = toBook(book);
+  await setCachedValue(cacheKey, result);
+  return result;
 };
 
 export const updateBook = async (
@@ -193,7 +338,9 @@ export const updateBook = async (
       data,
     });
 
-    return toBook(updated);
+    const result = toBook(updated);
+    await invalidateBooksCache();
+    return result;
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -203,8 +350,8 @@ export const updateBook = async (
     }
 
     throw error;
-  };
-}
+  }
+};
 
 export const deleteBook = async (id: number): Promise<Book | null> => {
   try {
@@ -212,7 +359,9 @@ export const deleteBook = async (id: number): Promise<Book | null> => {
       where: { id },
     });
 
-    return toBook(deleted);
+    const result = toBook(deleted);
+    await invalidateBooksCache();
+    return result;
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&

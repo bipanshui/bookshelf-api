@@ -43,14 +43,28 @@ prisma/
 Create a `.env` file in the project root:
 
 ```env
-DATABASE_URL=your_postgres_connection_string
+DATABASE_URL=postgresql://bookshelf:bookshelf@127.0.0.1:5432/bookshelf
 PORT=3000
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+POSTGRES_DB=bookshelf
+POSTGRES_USER=bookshelf
+POSTGRES_PASSWORD=bookshelf
 ```
 
 Notes:
 
 - `DATABASE_URL` is required.
 - `PORT` is optional. The app defaults to `3000`.
+- `REDIS_HOST` is optional. The app defaults to `127.0.0.1`.
+- `REDIS_PORT` is optional. The app defaults to `6379`.
+- `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are only used by [`docker-compose.yml`](/home/bipanshu/Devops_labs/projects/bookshelf-api/docker-compose.yml) when you run Postgres locally in Docker.
+
+Your current `.env` points to a remote Neon database. If you want the API to use a Postgres container running on the same machine, replace `DATABASE_URL` with a local connection string like:
+
+```env
+DATABASE_URL=postgresql://bookshelf:bookshelf@127.0.0.1:5432/bookshelf
+```
 
 ## Install
 
@@ -63,6 +77,31 @@ Sync the Prisma schema to your database:
 
 ```bash
 npm run prisma:push
+```
+
+## Local Containers
+
+[`docker-compose.yml`](/home/bipanshu/Devops_labs/projects/bookshelf-api/docker-compose.yml) starts both Postgres and Redis on the same machine with host ports exposed:
+
+```bash
+docker compose up -d
+```
+
+That gives you:
+
+- Postgres on `127.0.0.1:5432`
+- Redis on `127.0.0.1:6379`
+
+After the containers are healthy, point `DATABASE_URL` in `.env` to the local Postgres instance and run:
+
+```bash
+npm run prisma:push
+```
+
+If you want to inspect container status:
+
+```bash
+docker compose ps
 ```
 
 ## Run
@@ -167,19 +206,18 @@ If `DATABASE_URL` is missing, the app throws an error at startup.
 
 Redis is initialized in [`src/config/redis.ts`](/home/bipanshu/Devops_labs/projects/bookshelf-api/src/config/redis.ts).
 
-At the moment, the Redis client exists but is not yet used by the books endpoints.
+The API now caches these read endpoints:
 
-## Current Limitations
+- `GET /books`
+- `GET /books/search`
+- `GET /books/:id`
 
-- Only read access is implemented for books.
-- There is no `POST /books` endpoint yet.
-- Request validation is not implemented yet.
-- Redis caching is not wired into the API yet.
+Cache entries use the `books:*` namespace with a 5 minute TTL.
+
+Any successful `POST`, bulk `POST`, `PUT`, or `DELETE` against `/books` invalidates that namespace so list, search, and single-book reads stay consistent.
 
 ## Suggested Next Steps
 
-- Add `POST /books`
-- Add schema validation for request bodies
 - Add centralized error handling middleware
-- Use Redis to cache `GET /books`
 - Add tests for routes and services
+- Add metrics for cache hit rate and invalidation frequency

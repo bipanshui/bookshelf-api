@@ -4,6 +4,7 @@ import bookRoutes from "./routes/book-routes";
 import { apiDocs } from "./config/api-docs";
 import { connectDatabase, disconnectDatabase } from "./config/db";
 import { logger } from "./config/logger";
+import { connectRedis, disconnectRedis } from "./config/redis";
 import { requestLogger } from "./middleware/request-logger";
 
 dotenv.config();
@@ -36,6 +37,7 @@ const logApiRoutes = (): void => {
 const startServer = async (): Promise<void> => {
   try {
     await connectDatabase();
+    await connectRedis();
 
     const server = app.listen(port, () => {
       logger.info("Server started", { port });
@@ -45,7 +47,7 @@ const startServer = async (): Promise<void> => {
     const shutdown = async (signal: string): Promise<void> => {
       logger.info("Shutdown signal received", { signal });
       server.close(async () => {
-        await disconnectDatabase();
+        await Promise.allSettled([disconnectDatabase(), disconnectRedis()]);
         process.exit(0);
       });
     };
