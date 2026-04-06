@@ -1,14 +1,7 @@
 import { Request, Response } from "express";
+import { logger } from "../config/logger";
 import { NewBook } from "../models/book-model";
 import * as bookService from "../services/book-service";
-
-const isValidNewBook = (value: Partial<NewBook>): value is NewBook => {
-  return (
-    typeof value.title === "string" &&
-    typeof value.author === "string" &&
-    typeof value.published_year === "number"
-  );
-};
 
 export const getAllBooks = async (
   _req: Request,
@@ -18,22 +11,15 @@ export const getAllBooks = async (
     const books = await bookService.getBooks();
     res.status(200).json(books);
   } catch (error) {
-    console.error("Failed to fetch books", error);
+    logger.error("Failed to fetch books", { error });
     res.status(500).json({ message: "Failed to fetch books" });
   }
 };
 
 export const createBook = async (
-  req: Request<unknown, unknown, Partial<NewBook>>,
+  req: Request<unknown, unknown, NewBook>,
   res: Response,
 ): Promise<void> => {
-  if (!isValidNewBook(req.body)) {
-    res.status(400).json({
-      message: "title, author and published_year are required",
-    });
-    return;
-  }
-
   try {
     const result = await bookService.createBookIfNotExists(req.body);
 
@@ -47,35 +33,17 @@ export const createBook = async (
 
     res.status(201).json(result.book);
   } catch (error) {
-    console.error("Failed to create book", error);
+    logger.error("Failed to create book", { error });
     res.status(500).json({ message: "Failed to create book" });
   }
 };
 
 export const createBooksBulk = async (
-  req: Request<unknown, unknown, unknown>,
+  req: Request<unknown, unknown, NewBook[]>,
   res: Response,
 ): Promise<void> => {
-  if (!Array.isArray(req.body) || req.body.length === 0) {
-    res.status(400).json({
-      message: "Request body must be a non-empty array of books",
-    });
-    return;
-  }
-
-  const invalidIndex = req.body.findIndex(
-    (book) => !isValidNewBook(book as Partial<NewBook>),
-  );
-
-  if (invalidIndex !== -1) {
-    res.status(400).json({
-      message: `Invalid book payload at index ${invalidIndex}`,
-    });
-    return;
-  }
-
   try {
-    const result = await bookService.createBooksBulk(req.body as NewBook[]);
+    const result = await bookService.createBooksBulk(req.body);
     const createdCount = result.createdBooks.length;
     const existingCount = result.existingBooks.length;
 
@@ -90,7 +58,10 @@ export const createBooksBulk = async (
       existingBooks: result.existingBooks,
     });
   } catch (error) {
-    console.error("Failed to create books in bulk", error);
+    logger.error("Failed to create books in bulk", {
+      error,
+      payloadSize: req.body.length,
+    });
     res.status(500).json({ message: "Failed to create books in bulk" });
   }
 };
@@ -98,11 +69,6 @@ export const createBooksBulk = async (
 export const getBook = async (req: Request, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
-
-    if (Number.isNaN(id)) {
-      res.status(400).json({ message: "this is an invalid id" });
-      return;
-    }
 
     const book = await bookService.getBooksById(id);
 
@@ -113,22 +79,17 @@ export const getBook = async (req: Request, res: Response): Promise<void> => {
 
     res.status(200).json(book);
   } catch (error) {
-    console.error("Failed to fetch book", error);
+    logger.error("Failed to fetch book", { error, id: req.params.id });
     res.status(500).json({ message: "Failed to fetch book" });
   }
 };
 
 export const updateBook = async (
-  req: Request,
+  req: Request<{ id: string }, unknown, Partial<NewBook>>,
   res: Response,
 ): Promise<void> => {
   try {
     const id = Number(req.params.id);
-
-    if (Number.isNaN(id)) {
-      res.status(400).json({ message: "this is an invalid id" });
-      return;
-    }
 
     const updated = await bookService.updateBook(id, req.body);
 
@@ -139,7 +100,7 @@ export const updateBook = async (
 
     res.status(200).json(updated);
   } catch (error) {
-    console.error("Failed to update book", error);
+    logger.error("Failed to update book", { error, id: req.params.id });
     res.status(500).json({ message: "Failed to update book" });
   }
 };
@@ -151,11 +112,6 @@ export const deleteBook = async (
   try {
     const id = Number(req.params.id);
 
-    if (Number.isNaN(id)) {
-      res.status(400).json({ message: "this is an invalid id" });
-      return;
-    }
-
     const deleted = await bookService.deleteBook(id);
 
     if (!deleted) {
@@ -165,7 +121,7 @@ export const deleteBook = async (
 
     res.status(200).json(deleted);
   } catch (error) {
-    console.error("Failed to delete book", error);
+    logger.error("Failed to delete book", { error, id: req.params.id });
     res.status(500).json({ message: "Failed to delete book" });
   }
 };

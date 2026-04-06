@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client";
+import { logger } from "./logger";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set");
@@ -29,10 +30,10 @@ if (process.env.NODE_ENV !== "production") {
 
 export const connectDatabase = async (): Promise<void> => {
   await prisma.$connect();
-  console.log("Database connected successfully");
+  logger.info("Database connected successfully");
 };
 
 export const disconnectDatabase = async (): Promise<void> => {
   await prisma.$disconnect();
-  console.log("Database disconnected");
+  logger.info("Database disconnected");
 };
