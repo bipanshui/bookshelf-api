@@ -1,6 +1,11 @@
 import { prisma } from "../config/db";
 import { Prisma } from "../generated/prisma/client";
-import { Book, NewBook } from "../models/book-model";
+import {
+  Book,
+  BookQueryOptions,
+  NewBook,
+  PaginatedBooksResult,
+} from "../models/book-model";
 
 const toBook = (book: {
   id: number;
@@ -86,6 +91,72 @@ export const getBooks = async (): Promise<Book[]> => {
   return books.map(toBook);
 };
 
+const sortByToPrismaField = (
+  sortBy: BookQueryOptions["sort_by"],
+): "id" | "title" | "author" | "publishedYear" | "createdAt" => {
+  switch (sortBy) {
+    case "published_year":
+      return "publishedYear";
+    case "created_at":
+      return "createdAt";
+    default:
+      return sortBy;
+  }
+};
+
+export const getBooksWithQuery = async (
+  options: BookQueryOptions,
+): Promise<PaginatedBooksResult> => {
+  const { page, limit, author, published_year, search, sort_by, order } = options;
+
+  const where: Prisma.BookWhereInput = {
+    ...(author ? { author: { contains: author, mode: "insensitive" } } : {}),
+    ...(published_year !== undefined ? { publishedYear: published_year } : {}),
+    ...(search
+      ? {
+          OR: [
+            { title: { contains: search, mode: "insensitive" } },
+            { author: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+
+  const skip = (page - 1) * limit;
+  const [books, totalItems] = await Promise.all([
+    prisma.book.findMany({
+      where,
+      orderBy: {
+        [sortByToPrismaField(sort_by)]: order,
+      },
+      skip,
+      take: limit,
+    }),
+    prisma.book.count({ where }),
+  ]);
+
+  const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / limit);
+
+  return {
+    data: books.map(toBook),
+    pagination: {
+      page,
+      limit,
+      totalItems,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
+    },
+    filters: {
+      ...(author !== undefined ? { author } : {}),
+      ...(published_year !== undefined ? { published_year } : {}),
+      ...(search !== undefined ? { search } : {}),
+      sort_by,
+      order,
+    },
+  };
+};
+
 export const getBooksById = async (id: number): Promise<Book | null> => {
   const book = await prisma.book.findUnique({
     where: { id },
@@ -132,7 +203,7 @@ export const updateBook = async (
     }
 
     throw error;
-  }
+  };
 }
 
 export const deleteBook = async (id: number): Promise<Book | null> => {

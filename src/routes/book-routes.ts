@@ -4,11 +4,13 @@ import {
   createBooksBulk,
   getAllBooks,
   getBook,
+  searchBooks,
   updateBook,
   deleteBook
 } from "../controllers/book-controller";
 import { validate } from "../middleware/validate";
 import {
+  bookQuerySchema,
   bulkBooksSchema,
   idParamSchema,
   newBookSchema,
@@ -18,6 +20,7 @@ import {
 const router = Router();
 
 router.get("/", getAllBooks);
+router.get("/search", validate({ query: bookQuerySchema }), searchBooks);
 router.post("/", validate({ body: newBookSchema }), createBook);
 router.post("/bulk", validate({ body: bulkBooksSchema }), createBooksBulk);
 router.get("/:id", validate({ params: idParamSchema }), getBook);

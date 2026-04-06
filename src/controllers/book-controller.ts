@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { logger } from "../config/logger";
-import { NewBook } from "../models/book-model";
+import { BookQueryOptions, NewBook } from "../models/book-model";
 import * as bookService from "../services/book-service";
 
 export const getAllBooks = async (
@@ -13,6 +13,20 @@ export const getAllBooks = async (
   } catch (error) {
     logger.error("Failed to fetch books", { error });
     res.status(500).json({ message: "Failed to fetch books" });
+  }
+};
+
+export const searchBooks = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const query = req.query as unknown as BookQueryOptions;
+    const result = await bookService.getBooksWithQuery(query);
+    res.status(200).json(result);
+  } catch (error) {
+    logger.error("Failed to query books", { error, query: req.query });
+    res.status(500).json({ message: "Failed to query books" });
   }
 };
 
