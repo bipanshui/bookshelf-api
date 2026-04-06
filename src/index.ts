@@ -23,10 +23,9 @@ const logApiRoutes = (): void => {
   logger.info("Registered API routes", { routeCount: apiDocs.length });
 
   apiDocs.forEach((route) => {
-    logger.info("API route ready", {
+    logger.info(`${route.method} ${route.path}`, {
       method: route.method,
       path: route.path,
-      description: route.description,
       params: route.params,
       bodyType: route.bodyType,
       responseType: route.responseType,

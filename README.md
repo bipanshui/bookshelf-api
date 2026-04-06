@@ -117,6 +117,16 @@ Example:
 curl "http://localhost:3000/books/search?page=1&limit=5&search=atlas&author=nina&sort_by=created_at&order=desc"
 ```
 
+Useful test calls now:
+
+```bash
+curl "http://localhost:3000/books/search?page=1&limit=10"
+curl "http://localhost:3000/books/search?page=2&limit=10&sort_by=title&order=asc"
+curl "http://localhost:3000/books/search?page=1&limit=5&author=Mercer"
+curl "http://localhost:3000/books/search?page=1&limit=8&published_year=1975"
+curl "http://localhost:3000/books/search?page=1&limit=10&search=orchard"
+```
+
 Response shape:
 
 ```json

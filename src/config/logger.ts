@@ -2,30 +2,25 @@ import winston from "winston";
 
 const { combine, timestamp, errors, json, colorize, printf } = winston.format;
 
-const consoleFormat = printf(({ level, message, timestamp: ts, stack, ...meta }) => {
-  const baseMessage = `${ts} [${level}] ${message}`;
-  const metaString = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : "";
-
-  if (stack) {
-    return `${baseMessage}${metaString}\n${stack}`;
-  }
-
-  return `${baseMessage}${metaString}`;
+const developmentFormat = printf(({ timestamp: ts, level, message, stack, ...meta }) => {
+  const metadata = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : "";
+  return stack
+    ? `${ts} ${level}: ${message}${metadata}\n${stack}`
+    : `${ts} ${level}: ${message}${metadata}`;
 });
 
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
-  defaultMeta: { service: "bookshelf-api" },
   transports: [
     new winston.transports.Console({
       format:
         process.env.NODE_ENV === "production"
           ? combine(timestamp(), errors({ stack: true }), json())
           : combine(
+              errors({ stack: true }),
               colorize(),
               timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-              errors({ stack: true }),
-              consoleFormat,
+              developmentFormat,
             ),
     }),
   ],
