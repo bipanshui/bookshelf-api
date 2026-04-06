@@ -107,6 +107,38 @@ Example:
 curl http://localhost:3000/books
 ```
 
+### `GET /books/search`
+
+Search books with combined pagination, filtering, and sorting.
+
+Example:
+
+```bash
+curl "http://localhost:3000/books/search?page=1&limit=5&search=atlas&author=nina&sort_by=created_at&order=desc"
+```
+
+Response shape:
+
+```json
+{
+  "data": [],
+  "pagination": {
+    "page": 1,
+    "limit": 5,
+    "totalItems": 0,
+    "totalPages": 0,
+    "hasNextPage": false,
+    "hasPreviousPage": false
+  },
+  "filters": {
+    "author": "nina",
+    "search": "atlas",
+    "sort_by": "created_at",
+    "order": "desc"
+  }
+}
+```
+
 ## Database
 
 Prisma is configured in [schema.prisma](/home/bipanshu/Devops_labs/projects/bookshelf-api/prisma/schema.prisma), and the shared Prisma client is initialized in [db.ts](/home/bipanshu/Devops_labs/projects/bookshelf-api/src/config/db.ts).
